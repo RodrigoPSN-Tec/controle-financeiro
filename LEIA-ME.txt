@@ -1,0 +1,26 @@
+CONTROLE FINANCEIRO - PACOTE PWA
+
+Arquivos:
+  index.html        o aplicativo
+  manifest.json     nome, cores e ícones do app instalado
+  sw.js             deixa o app abrir sem internet
+  icons/            ícones (192, 512, maskable e iPhone)
+
+Como publicar
+1. Envie TODOS os arquivos, mantendo a pasta icons/, para uma hospedagem com HTTPS
+   (GitHub Pages, Netlify, Cloudflare Pages ou o seu próprio site).
+   Pode ficar na raiz ou em uma subpasta: os caminhos são relativos.
+2. Abra o endereço no celular.
+   - Android (Chrome): menu ⋮ > "Instalar app" ou "Adicionar à tela inicial".
+   - iPhone (Safari): botão Compartilhar > "Adicionar à Tela de Início".
+   - Computador (Chrome/Edge): ícone de instalar na barra de endereço.
+
+Observações
+- Os dados ficam salvos no navegador do aparelho. Não há conta nem sincronização.
+  Limpar os dados do navegador apaga tudo.
+- O service worker só funciona em HTTPS (ou em localhost); em file:// o app abre,
+  mas não instala.
+- Ao atualizar o index.html, troque "controle-financeiro-v1" em sw.js por v2, v3...
+  para os aparelhos receberem a nova versão.
+- No iPhone, o app instalado usa um armazenamento separado do Safari: cadastre
+  os dados depois de instalar.

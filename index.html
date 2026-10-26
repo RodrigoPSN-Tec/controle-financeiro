@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Controle Financeiro</title><!-- Versão para hospedagem em site: dados salvos no navegador de cada pessoa, sem conta e sem compartilhamento. -->
+<link rel="manifest" href="manifest.json"><link rel="icon" type="image/png" href="icons/icon-192.png"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="color-scheme" content="light dark"><meta name="theme-color" content="#2563eb"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Finanças"><meta name="format-detection" content="telephone=no">
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1c2430;--mu:#6b7686;--bd:#e2e6ec;--ac:#2563eb;--ok:#15803d;--ng:#b91c1c;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12161c;--card:#1c232d;--tx:#e8ecf2;--mu:#98a3b3;--bd:#2c3644;--ac:#6ea0ff;--ok:#4ade80;--ng:#f87171}}
+*{box-sizing:border-box}body{-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent;margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 system-ui,sans-serif}
+main{max-width:760px;margin:auto;padding:14px}
+h1{font-size:19px;margin:4px 0 12px}h2{font-size:15px;margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:12px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.g{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+button,input,select{font:inherit;font-size:16px;min-height:40px;touch-action:manipulation;color:var(--tx);background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;min-width:0}
+button{cursor:pointer}button.p{background:var(--ac);color:#fff;border-color:var(--ac)}
+.tabs{display:flex;gap:6px;overflow-x:auto;margin-bottom:12px}.tabs button{white-space:nowrap}.tabs .on{background:var(--ac);color:#fff;border-color:var(--ac)}
+.k{color:var(--mu);font-size:12px}.v{font-size:18px;font-weight:600}.ok{color:var(--ok)}.ng{color:var(--ng)}
+.tw{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:6px 4px;border-bottom:1px solid var(--bd);text-align:left;white-space:nowrap}
+.bar{height:6px;background:var(--bd);border-radius:4px;overflow:hidden}.bar i{display:block;height:100%;background:var(--ac)}
+.lb{display:block;text-align:center;text-decoration:none;background:var(--ac);color:#fff;border-radius:8px;padding:10px;min-height:40px;margin-bottom:8px}
+#toast{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));background:var(--tx);color:var(--bg);padding:10px 12px;border-radius:10px;display:none;z-index:9}
+label{display:block;font-size:12px;color:var(--mu)}label input,label select{width:100%;display:block;margin-top:2px}
+</style></head><body><main id="app"></main><div id="toast"></div>
+<script>
+const CATS={Despesa:["Alimentação","Assinaturas","Bares","Restaurantes","Casa","Compras","Contador","Gastos pessoais","Dívidas e empréstimos","Educação","Família","Impostos e taxas","Lazer e hobbies","Mercado","Outros","Pets","Presentes e doações","Roupas","Saúde","Trabalho","Transporte","Viagem"],Recebimento:["Aluguéis","Empréstimos","Empresa","Notas Fiscais emitidas","Outras receitas","Salário"]};
+const FORMAS=["Pix","Débito","Crédito","Dinheiro","Boleto","Transferência"];
+const brl=n=>(+n||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const uid=()=>Math.random().toString(36).slice(2,9);
+let S={people:[]},tab="resumo",pid=null,ref=null,ready=false,timer,fy="",fm="",acct="",local=false;
+const ftx=p=>p.tx.filter(t=>(!fy||t.venc.slice(0,4)===fy)&&(!fm||+t.venc.slice(5,7)===+fm));
+const today=()=>new Date().toISOString().slice(0,10);
+const now=()=>new Date().toISOString();
+const fdt=s=>s?new Date(s).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}):"";
+const lg=(p,a,t)=>{if(!p)return;p.log=p.log||[];p.log.unshift({d:now(),a,t:t||""});if(p.log.length>300)p.log.length=300};
+const P=()=>S.people.find(p=>p.id===pid)||S.people[0];
+
+let why="",isCopy=false,DB=null,UID="",mode="own",sid="",sref=null,rev="",unsub=null,HASH=location.hash||"";
+const APP_URL="https://claude.ai/artifact/FLBwtkKLNAAfrAYYPuFxa1",RO=()=>mode==="view";
+async function init(){
+  try{const l=localStorage.getItem("cf");if(l)S=JSON.parse(l)}catch(e){}
+  local=true;pid=S.people[0]?.id;ready=true;render();
+}
+function save(){clearTimeout(timer);timer=setTimeout(async()=>{
+  try{if(RO())return;if(sref){rev=rnd(10);const D=cl(S);delete D.shareId;await sref.set({d:D,rev,by:UID,em:now()})}
+    if(ref&&mode==="own")await ref.set(cl(S));else if(!ref)localStorage.setItem("cf",JSON.stringify(S))}catch(e){}},400)}
+const sums=(p,all)=>{const r={rec:0,arec:0,pag:0,pen:0};(all?p.tx:ftx(p)).forEach(t=>{if(t.tipo==="Recebimento")t.pago?r.rec+=t.valor:r.arec+=t.valor;else t.pago?r.pag+=t.valor:r.pen+=t.valor});
+  r.res=r.rec-r.pag;r.proj=p.balance+r.arec-r.pen;return r};
+const stat=t=>t.tipo==="Recebimento"?(t.pago?"Recebido":"Não recebido"):(t.pago?"Pago":"Pendente");
+
+function render(){
+  if(!ready)return;const a=document.getElementById("app");
+  if(!ref&&!local){a.innerHTML=`<h1>💰 Controle Financeiro</h1><div class="card"><h2>🔒 Entre na sua conta</h2>${/^#(c|v)-/.test(HASH)?'<p class="k">Este link de compartilhamento só abre com a conta Claude.</p>':""}<p class="k">Para acessar, abra o link logado na sua conta. Os dados ficam privados e sincronizados entre os seus aparelhos (iPhone, Android e computador).</p>${why?`<p class="ng">${esc(why)}</p>`:""}${isCopy?`<a class="lb" href="https://claude.ai/artifact/FLBwtkKLNAAfrAYYPuFxa1" target="_blank" rel="noopener">Abrir o app com conta</a>`:""}<div style="display:grid;gap:8px"><a class="lb" href="https://claude.ai/login" target="_blank" rel="noopener">Entrar com conta Claude</a><button data-a="rel">Já entrei, verificar</button>${/^#(c|v)-/.test(HASH)?"":`<button data-a="loc">Continuar sem conta (dados só neste aparelho)</button>`}</div><p class="k">Depois de entrar, volte ao link compartilhado e toque em "Já entrei". O dono do app precisa compartilhá-lo com o seu e-mail.</p></div>`;return}
+  let h=`<h1>💰 Controle Financeiro</h1><div class="row" style="margin:-4px 0 10px;justify-content:space-between"><span class="k">${ref?"Conectado: "+esc(acct):"Modo local: dados só neste aparelho"}${mode==="collab"?" · Espaço compartilhado (colaborador)":mode==="view"?" · Espaço compartilhado (somente visualização)":""}</span><span class="row">${mode!=="own"?`<button data-a="own">Meus dados</button>`:""}${ref?`<button data-a="share">🔗 Compartilhar</button>`:""}</span></div>`;
+  h+=`<div class="card"><h2>Pessoas (${S.people.length}/2)</h2><div class="row">`;
+  S.people.forEach(p=>h+=`<button class="${p.id===P()?.id?"p":""}" data-a="sel" data-i="${p.id}">${esc(p.name)}</button>`);
+  if(S.people.length<2)h+=`<input id="nn" placeholder="Nome da pessoa"><button data-a="addp">Adicionar</button>`;
+  h+="</div>";
+  const p=P();
+  if(p)h+=`<div class="row" style="margin-top:8px"><input id="en" value="${esc(p.name)}"><button data-a="ren">Renomear</button><button data-a="delp">Excluir</button></div>`;
+  h+="</div>";
+  if(!p){a.innerHTML=h+`<div class="card k">Adicione o nome de até duas pessoas para começar. Cada uma terá suas movimentações e seu valor em conta.</div>`;return}
+  const tabs=[["resumo","Resumo"],["mov","Movimentações"],["conta","Valor em conta"],["inv","Investimentos"],["hist","Histórico"]];if(S.people.length>1)tabs.push(["cmp","Comparar"]);
+  h+=`<div class="tabs">`+tabs.map(([k,n])=>`<button class="${tab===k?"on":""}" data-a="tab" data-i="${k}">${n}</button>`).join("")+"</div>";
+  if(["resumo","mov","cmp"].includes(tab))h+=fbar();if(tab==="resumo")h+=resumo(p);if(tab==="mov")h+=mov(p);if(tab==="conta")h+=conta(p);if(tab==="cmp")h+=cmp();if(tab==="inv")h+=inv(p);if(tab==="hist")h+=hist(p);if(tab==="share")h+=share(p);
+  const f=document.activeElement?.id;a.innerHTML=h;if(RO()&&document.querySelectorAll)document.querySelectorAll("#app button,#app input,#app select").forEach(e=>{if(!["sel","tab","share","cp","own","fy","fm","lnk"].includes(e.dataset.a))e.disabled=true});if(f&&document.getElementById(f))document.getElementById(f).focus();
+}
+const box=(k,v,c="")=>`<div class="card" style="margin:0"><div class="k">${k}</div><div class="v ${c}">${brl(v)}</div></div>`;
+function resumo(p){const s=sums(p);
+  let h=`<div class="g" style="margin-bottom:12px">${box("Recebido",s.rec,"ok")}${box("A receber",s.arec)}${box("Despesas pagas",s.pag,"ng")}${box("Pendentes",s.pen)}${box("Resultado",s.res,s.res>=0?"ok":"ng")}${box("Saldo projetado (geral)",sums(p,1).proj,sums(p,1).proj>=0?"ok":"ng")}</div>`;
+  const by={};ftx(p).filter(t=>t.tipo==="Despesa").forEach(t=>by[t.cat]=(by[t.cat]||0)+t.valor);
+  const e=Object.entries(by).sort((x,y)=>y[1]-x[1]),m=e[0]?.[1]||1;
+  h+=`<div class="card"><h2>Despesas por categoria</h2>`+(e.length?e.map(([c,v])=>`<div class="k">${esc(c)} — ${brl(v)}</div><div class="bar"><i style="width:${v/m*100}%"></i></div>`).join(""):`<div class="k">Sem despesas ainda.</div>`)+"</div>";return h}
+function mov(p){
+  const opt=a=>a.map(x=>`<option>${esc(x)}</option>`).join("");
+  let h=`<div class="card"><h2>Nova movimentação</h2><div class="g">
+  <label>Tipo<select id="f_tipo" data-a="tipo"><option>Despesa</option><option>Recebimento</option></select></label>
+  <label>Categoria<select id="f_cat">${opt(CATS.Despesa)}</select></label>
+  <label>Descrição<input id="f_desc"></label><label>Valor total (R$)<input id="f_val" type="number" step="0.01" inputmode="decimal"></label>
+  <label>Forma de pagamento<select id="f_forma">${opt(FORMAS)}</select></label><label>Parcelas<input id="f_par" type="number" min="1" value="1"></label>
+  <label>Vencimento<input id="f_venc" type="date" value="${today()}"></label></div>
+  <div class="row" style="margin-top:10px"><button class="p" data-a="addt">Adicionar</button></div></div>`;
+  const L=[...ftx(p)].sort((a,b)=>a.venc.localeCompare(b.venc));
+  h+=`<div class="card"><h2>Lançamentos (${L.length})</h2><div class="tw"><table><tr><th>Venc.</th><th>Tipo</th><th>Categoria</th><th>Descrição</th><th>Valor</th><th>Parc.</th><th>Status</th><th>Atualizado em</th><th></th></tr>`+
+  L.map(t=>`<tr><td>${t.venc.split("-").reverse().join("/")}</td><td>${t.tipo}</td><td>${esc(t.cat)}</td><td>${esc(t.desc)}</td><td class="${t.tipo==="Recebimento"?"ok":"ng"}">${brl(t.valor)}</td><td>${t.num}/${t.parcelas}</td><td><button data-a="tog" data-i="${t.id}">${stat(t)}</button></td><td class="k">${fdt(t.editado||t.criado)}</td><td><button data-a="delt" data-i="${t.id}">✕</button></td></tr>`).join("")+`</table></div>${L.length?"":'<div class="k">Nenhum lançamento.</div>'}</div>`;return h}
+function conta(p){const s=sums(p,1);
+  return `<div class="card"><h2>Valor em conta — ${esc(p.name)}</h2><label>Saldo disponível na conta bancária (R$)<input id="bal" type="number" step="0.01" inputmode="decimal" value="${p.balance}"></label>
+  <div class="row" style="margin-top:8px"><button class="p" data-a="bal">Atualizar saldo</button></div><div class="k" style="margin-top:6px">Última atualização: ${p.balEm?fdt(p.balEm):"ainda não atualizado"}</div>
+  <label style="margin-top:10px;display:flex;gap:8px;align-items:center"><input type="checkbox" id="auto" data-a="auto" ${p.auto?"checked":""} style="width:auto;margin:0"> Ajustar o saldo automaticamente ao marcar como pago/recebido</label></div>
+  <div class="g">${box("Saldo atual",p.balance)}${box("A receber",s.arec,"ok")}${box("A pagar",s.pen,"ng")}${box("Saldo projetado",s.proj,s.proj>=0?"ok":"ng")}</div>`}
+function cmp(){const [a,b]=S.people,x=sums(a),y=sums(b);
+  const R=(k,f)=>{const u=f(x),v=f(y),t=Math.abs(u)+Math.abs(v)||1;return `<tr><td>${k}</td><td>${brl(u)} (${(Math.abs(u)/t*100).toFixed(0)}%)</td><td>${brl(v)} (${(Math.abs(v)/t*100).toFixed(0)}%)</td><td>${brl(u-v)}</td></tr>`};
+  return `<div class="card"><h2>Comparação</h2><div class="tw"><table><tr><th></th><th>${esc(a.name)}</th><th>${esc(b.name)}</th><th>Diferença</th></tr>${R("Recebido",s=>s.rec)}${R("Despesas pagas",s=>s.pag)}${R("Pendentes",s=>s.pen)}${R("Resultado",s=>s.res)}${R("Saldo em conta",s=>0)}`.replace(R("Saldo em conta",s=>0),"")+
+  `<tr><td>Saldo em conta</td><td>${brl(a.balance)}</td><td>${brl(b.balance)}</td><td>${brl(a.balance-b.balance)}</td></tr></table></div><div class="k" style="margin-top:6px">Percentuais mostram a participação de cada pessoa no total somado de cada linha.</div></div>`}
+
+function fbar(){const ys=[...new Set([new Date().getFullYear(),...S.people.flatMap(p=>p.tx.map(t=>+t.venc.slice(0,4)))])].sort(),M=["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+  return `<div class="card row"><span class="k">Período</span><select data-a="fy"><option value="">Todos os anos</option>${ys.map(y=>`<option ${fy==y?"selected":""}>${y}</option>`).join("")}</select><select data-a="fm"><option value="">Ano inteiro</option>${M.map((m,i)=>`<option value="${i+1}" ${fm==i+1?"selected":""}>${m}</option>`).join("")}</select></div>`}
+function inv(p){p.inv=p.inv||[];const T=["Ação","FII","Tesouro Direto"],sel=S.selic||{},
+  pr=(a,b)=>{const d=b-a;return `<span class="${d>=0?"ok":"ng"}">${brl(d)} (${a?(d/a*100).toFixed(1):"0.0"}%)</span>`};
+  const sm=l=>l.reduce((r,x)=>({a:r.a+x.q*x.pm,b:r.b+x.q*x.cot}),{a:0,b:0}),all=sm(p.inv);
+  let h=`<div class="card"><h2>Taxa Selic</h2><div class="row"><input id="sv" type="number" step="0.01" inputmode="decimal" placeholder="% ao ano" value="${sel.v??""}"><button data-a="selic">Salvar</button></div><div class="k" style="margin-top:6px">${sel.d?"Informada em "+sel.d.split("-").reverse().join("/"):"Ainda não informada."} A taxa oficial está no <a href="https://www.bcb.gov.br/controleinflacao/taxaselic" target="_blank" rel="noopener">site do Banco Central</a>.</div></div>`;
+  h+=`<div class="g" style="margin-bottom:12px">${box("Total investido",all.a)}${box("Valor atual",all.b)}</div><div class="card"><h2>Rentabilidade</h2><div class="tw"><table>`+T.map(t=>{const s=sm(p.inv.filter(x=>x.tipo===t));return `<tr><td>${t}</td><td>${brl(s.a)}</td><td>${brl(s.b)}</td><td>${pr(s.a,s.b)}</td></tr>`}).join("")+`<tr><td><b>Total</b></td><td>${brl(all.a)}</td><td>${brl(all.b)}</td><td>${pr(all.a,all.b)}</td></tr></table></div></div>`;
+  h+=`<div class="card"><h2>Novo investimento</h2><div class="g"><label>Tipo<select id="i_tipo">${T.map(t=>`<option>${t}</option>`).join("")}</select></label><label>Código ou título<input id="i_cod" placeholder="PETR4, MXRF11, Tesouro Selic 2029"></label><label>Quantidade<input id="i_q" type="number" step="any" inputmode="decimal"></label><label>Preço médio pago (R$)<input id="i_pm" type="number" step="0.01" inputmode="decimal"></label><label>Cotação atual (R$)<input id="i_cot" type="number" step="0.01" inputmode="decimal"></label><label>Taxa ou observação<input id="i_obs"></label></div><div class="row" style="margin-top:10px"><button class="p" data-a="addi">Adicionar</button></div></div>`;
+  h+=`<div class="card"><h2>Carteira (${p.inv.length})</h2><div class="k">Edite a cotação atual de cada ativo para atualizar o valor. Fonte das cotações: <a href="https://www.b3.com.br" target="_blank" rel="noopener">B3</a>.</div><div class="tw"><table><tr><th>Tipo</th><th>Código</th><th>Qtd</th><th>Preço médio</th><th>Cotação</th><th>Atual</th><th>Resultado</th><th>Obs.</th><th>Atualizado em</th><th></th></tr>`+p.inv.map(x=>`<tr><td>${x.tipo}</td><td>${esc(x.cod)}</td><td>${x.q}</td><td>${brl(x.pm)}</td><td><input id="c_${x.id}" data-a="cot" data-i="${x.id}" type="number" step="0.01" value="${x.cot}" style="width:90px"><div class="k">${x.data?x.data.split("-").reverse().join("/"):""}</div></td><td>${brl(x.q*x.cot)}</td><td>${pr(x.q*x.pm,x.q*x.cot)}</td><td>${esc(x.obs)}</td><td class="k">${fdt(x.editado||x.criado)}</td><td><button data-a="deli" data-i="${x.id}">✕</button></td></tr>`).join("")+`</table></div>${p.inv.length?"":'<div class="k">Nenhum investimento.</div>'}</div>`;return h}
+function hist(p){const L=p.log||[];return `<div class="card"><h2>Histórico de alterações — ${esc(p.name)}</h2><div class="k">Cada alteração é registrada automaticamente com data e hora.</div><div class="tw"><table><tr><th>Data e hora</th><th>Ação</th><th>Detalhe</th></tr>`+L.map(e=>`<tr><td>${fdt(e.d)}</td><td>${esc(e.a)}</td><td>${esc(e.t)}</td></tr>`).join("")+`</table></div>${L.length?"":'<div class="k">Nenhuma alteração registrada ainda.</div>'}</div>`}
+const cl=o=>JSON.parse(JSON.stringify(o));
+const rnd=n=>{const a=new Uint8Array(n);crypto.getRandomValues(a);return[...a].map(b=>"abcdefghijkmnpqrstuvwxyz23456789"[b%32]).join("")};
+function defer(){const f=document.activeElement;if(f&&["INPUT","SELECT"].includes(f.tagName)){clearTimeout(defer.t);defer.t=setTimeout(defer,3000)}else render()}
+function sub(){if(unsub){try{unsub()}catch(e){}unsub=null}if(!sref)return;
+  unsub=sref.onSnapshot(snap=>{if(!snap.exists)return;const x=snap.data();if(!x||!x.d||x.rev===rev)return;const k=S.shareId;rev=x.rev;S=cl(x.d);if(k&&mode==="own")S.shareId=k;pid=S.people.find(p=>p.id===pid)?pid:S.people[0]?.id;defer()},()=>{})}
+async function openShare(){
+  const h=/^#(c|v)-([A-Za-z0-9]{8,})$/.exec(HASH);mode="own";sid="";sref=null;
+  if(h){const r=DB.collection("shares").doc(h[2]),d=await r.get();
+    if(!d.exists||!d.data().d){why="Link de compartilhamento inválido ou desativado pelo dono.";return}
+    sref=r;sid=h[2];mode=h[1]==="c"?"collab":"view";const x=d.data();S=cl(x.d);rev=x.rev||""}
+  else if(S.shareId){const r=DB.collection("shares").doc(S.shareId),d=await r.get();sid=S.shareId;sref=r;
+    if(d.exists&&d.data().d){const x=d.data(),k=S.shareId;S=cl(x.d);S.shareId=k;rev=x.rev||""}}
+  sub()}
+function share(p){const own=mode==="own",can=mode!=="view";
+  const L=(t,tt,d,u)=>`<div class="card"><h2>${tt}</h2><div class="k">${d}</div><input data-a="lnk" readonly value="${esc(u)}" style="width:100%;margin:8px 0"><div class="row"><button class="p" data-a="cp" data-i="${t}">Copiar link</button></div></div>`;
+  let h=`<div class="card"><h2>Compartilhar o app</h2><div class="k">${own&&!sid?"Ative o compartilhamento para gerar os links de colaborador e visualizador. Até lá, seus dados continuam só seus.":"Cada tipo de acesso tem um link próprio."}</div>${own&&!sid?`<div class="row" style="margin-top:8px"><button class="p" data-a="shon">Ativar compartilhamento</button></div>`:""}</div>`;
+  if(sid){if(can)h+=L("c","Colaborador","Vê os dados compartilhados e pode editar e acrescentar novos dados. Entra com a conta Claude.",APP_URL+"#c-"+sid);
+    h+=L("v","Visualizador","Apenas visualiza os dados compartilhados, sem alterar. Entra com a conta Claude.",APP_URL+"#v-"+sid)}
+  h+=L("n","Novo acesso","Abre o app vazio: a pessoa cria a conta para salvar os próprios dados ou continua sem conta.",APP_URL+"#n");
+  if(own&&sid)h+=`<div class="card"><button data-a="shoff">Desativar compartilhamento</button><div class="k" style="margin-top:6px">Os links de colaborador e visualizador deixam de funcionar. Seus dados continuam com você.</div></div>`;
+  return h+`<div class="card k">Os links só controlam o que a pessoa vê dentro do app. Para salvar dados, ela também precisa de acesso de colaborador no menu de compartilhar do próprio app no Claude. Quem tem o link de colaborador altera os dados compartilhados; a restrição do visualizador vale dentro do app.</div>`}
+let armed=false;
+function toast(m){const e=document.getElementById("toast");e.textContent=m;e.style.display="block";clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.display="none",3500)}
+document.addEventListener("click",e=>{
+  const el=e.target.closest("[data-a]");if(!el||["SELECT","INPUT"].includes(el.tagName))return;
+  const a=el.dataset.a,i=el.dataset.i,p=P(),v=id=>document.getElementById(id)?.value;
+  if(RO()&&!["sel","tab","cp","own","share","rel","loc"].includes(a)){toast("Modo visualização: não é possível alterar.");return}
+  if(a==="sel"){pid=i}
+  else if(a==="rel"){toast("Verificando sua conta...");init().then(()=>{if(!ref){toast("Conta ainda não reconhecida. Recarregue a página do navegador ou abra o link novamente.");setTimeout(()=>{try{location.reload()}catch(e){}},2500)}});return}
+  else if(a==="loc"){local=true;try{const l=localStorage.getItem("cf");if(l)S=JSON.parse(l)}catch(e){}pid=S.people[0]?.id}
+  else if(a==="tab"){tab=i}
+  else if(a==="share"){tab="share"}
+  else if(a==="own"){HASH="";init();return}
+  else if(a==="shon"){if(!DB)return;sid=rnd(16);S.shareId=sid;sref=DB.collection("shares").doc(sid);rev=rnd(10);const D=cl(S);delete D.shareId;sref.set({d:D,rev,by:UID,em:now()}).catch(()=>toast("Não foi possível ativar o compartilhamento."));sub();toast("Compartilhamento ativado.")}
+  else if(a==="shoff"){if(!armed){armed=true;toast("Toque de novo para desativar o compartilhamento.");setTimeout(()=>armed=false,4000);return}armed=false;if(unsub){try{unsub()}catch(e){}unsub=null}if(sref)sref.delete().catch(()=>{});sref=null;sid="";delete S.shareId;toast("Compartilhamento desativado.")}
+  else if(a==="cp"){const u=i==="n"?APP_URL+"#n":APP_URL+"#"+i+"-"+sid;try{navigator.clipboard.writeText(u).then(()=>toast("Link copiado."),()=>toast("Toque e segure no link para copiar."))}catch(e){toast("Toque e segure no link para copiar.")}return}
+  else if(a==="addp"){const n=(v("nn")||"").trim();if(!n||S.people.length>=2)return;const q={id:uid(),name:n,balance:0,auto:true,tx:[],log:[]};lg(q,"Pessoa adicionada",n);S.people.push(q);pid=q.id}
+  else if(a==="ren"){const n=(v("en")||"").trim();if(n){lg(p,"Nome alterado",p.name+" → "+n);p.name=n}}
+  else if(a==="delp"){if(!armed){armed=true;toast("Toque de novo em Excluir para apagar "+p.name+" e todos os dados.");setTimeout(()=>armed=false,4000);return}armed=false;S.people=S.people.filter(x=>x!==p);pid=S.people[0]?.id}
+  else if(a==="bal"){const nb=parseFloat(v("bal"))||0;lg(p,"Saldo em conta atualizado",brl(p.balance)+" → "+brl(nb));p.balance=nb;p.balEm=now()}
+  else if(a==="addt"){const val=parseFloat(v("f_val")),n=Math.max(1,parseInt(v("f_par"))||1);if(!(val>0)||!v("f_venc"))return toast("Informe valor e vencimento.");
+    const g=uid(),d0=new Date(v("f_venc")+"T12:00:00");
+    for(let k=0;k<n;k++){const d=new Date(d0);d.setMonth(d0.getMonth()+k);
+      p.tx.push({id:uid(),tipo:v("f_tipo"),cat:v("f_cat"),desc:v("f_desc"),valor:Math.round(val/n*100)/100,forma:v("f_forma"),parcelas:n,num:k+1,venc:d.toISOString().slice(0,10),pago:false,dataPag:"",grp:g,criado:now(),editado:now()})}lg(p,"Lançamento adicionado",v("f_tipo")+" · "+v("f_cat")+" · "+brl(val)+(n>1?" em "+n+"x":""))}
+  else if(a==="tog"){const t=p.tx.find(x=>x.id===i);t.pago=!t.pago;t.dataPag=t.pago?today():"";t.editado=now();lg(p,t.pago?"Marcado como "+stat(t):"Status revertido",(t.desc||t.cat)+" · "+brl(t.valor));if(p.auto)p.balEm=now();
+    if(p.auto)p.balance=Math.round((p.balance+(t.tipo==="Recebimento"?1:-1)*(t.pago?1:-1)*t.valor)*100)/100}
+  else if(a==="delt"){const t=p.tx.find(x=>x.id===i);if(t)lg(p,"Lançamento excluído",(t.desc||t.cat)+" · "+brl(t.valor));p.tx=p.tx.filter(x=>x.id!==i)}
+  else if(a==="selic"){const n=parseFloat(v("sv"));S.selic={v:isNaN(n)?"":n,d:today(),em:now()};lg(p,"Selic informada",isNaN(n)?"vazio":n+"% a.a.");toast("Selic salva.")}
+  else if(a==="addi"){const c=(v("i_cod")||"").trim().toUpperCase(),q=parseFloat(v("i_q")),pm=parseFloat(v("i_pm")),ct=parseFloat(v("i_cot"));
+    if(!c||!(q>0)||(isNaN(pm)&&isNaN(ct)))return toast("Informe código, quantidade e preço (médio ou cotação).");p.inv=p.inv||[];
+    const pp=isNaN(pm)?ct:pm;p.inv.push({id:uid(),tipo:v("i_tipo"),cod:c,q,pm:pp,cot:isNaN(ct)?pp:ct,data:today(),obs:v("i_obs")||"",criado:now(),editado:now()});lg(p,"Investimento adicionado",c+" · "+q+" un.");toast("Investimento adicionado.")}
+  else if(a==="deli"){const x=(p.inv||[]).find(y=>y.id===i);if(x)lg(p,"Investimento excluído",x.cod);p.inv=(p.inv||[]).filter(y=>y.id!==i)}
+  save();render()});
+document.addEventListener("change",e=>{
+  const el=e.target;if(el.dataset.a==="tipo"){document.getElementById("f_cat").innerHTML=CATS[el.value].map(x=>`<option>${esc(x)}</option>`).join("")}
+  if(el.dataset.a==="auto"){P().auto=el.checked;save()}
+  if(el.dataset.a==="fy"){fy=el.value;render()}if(el.dataset.a==="fm"){fm=el.value;render()}
+  if(el.dataset.a==="cot"){const x=P().inv.find(y=>y.id===el.dataset.i);lg(P(),"Cotação atualizada",x.cod+": "+brl(x.cot)+" → "+brl(parseFloat(el.value)||0));x.cot=parseFloat(el.value)||0;x.data=today();x.editado=now();save();render()}});
+if("serviceWorker"in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+init();render();
+</script></body></html>
